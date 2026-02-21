@@ -6,9 +6,9 @@ from deep_translator import GoogleTranslator
 import re
 import uuid
 
-# =====================================
+# ===============================
 # Page Config
-# =====================================
+# ===============================
 
 st.set_page_config(
     page_title="Spam Detection Chat",
@@ -16,88 +16,34 @@ st.set_page_config(
     layout="wide"
 )
 
-# =====================================
-# Language Selection (FIRST)
-# =====================================
-
-language = st.sidebar.selectbox("🌍 Language / اللغة", ["English", "العربية"])
-
-# Translation Dictionary
-translations = {
-    "English": {
-        "title": "🤖 Spam Detection Model",
-        "conversations": "💬 Conversations",
-        "new_chat": "➕ New Chat",
-        "chat": "Chat",
-        "placeholder": "Type your message...",
-        "spam_title": "🚨 SPAM DETECTED",
-        "ham_title": "✅ SAFE MESSAGE",
-        "prob_spam": "Spam Probability",
-        "prob_ham": "Ham Probability"
-    },
-    "العربية": {
-        "title": "🤖 نموذج كشف الرسائل المزعجة",
-        "conversations": "💬 المحادثات",
-        "new_chat": "➕ محادثة جديدة",
-        "chat": "محادثة",
-        "placeholder": "اكتب رسالتك...",
-        "spam_title": "🚨 تم اكتشاف رسالة مزعجة",
-        "ham_title": "✅ رسالة آمنة",
-        "prob_spam": "احتمال الإزعاج",
-        "prob_ham": "احتمال السلامة"
-    }
-}
-
-t = translations[language]
-
-# =====================================
-# RTL Support
-# =====================================
-
-if language == "العربية":
-    st.markdown("""
-        <style>
-        html, body, [class*="css"] {
-            direction: rtl;
-            text-align: right;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-else:
-    st.markdown("""
-        <style>
-        html, body, [class*="css"] {
-            direction: ltr;
-            text-align: left;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
-st.markdown(f"<h1 style='text-align:center;'>{t['title']}</h1>", unsafe_allow_html=True)
-st.markdown("---")
-
-# =====================================
+# ===============================
 # Load Dataset & Train Model
-# =====================================
+# ===============================
 
-df = pd.read_csv("spam_cleaned.csv")
-X = df["message"]
-y = df["label"]
+@st.cache_resource
+def load_model():
+    df = pd.read_csv("spam_cleaned.csv")
+    X = df["message"]
+    y = df["label"]
 
-vectorizer = TfidfVectorizer(
-    stop_words='english',
-    ngram_range=(1,2),
-    max_df=0.9
-)
+    vectorizer = TfidfVectorizer(
+        stop_words='english',
+        ngram_range=(1, 2),
+        max_df=0.9
+    )
 
-X_vectorized = vectorizer.fit_transform(X)
+    X_vectorized = vectorizer.fit_transform(X)
 
-model = MultinomialNB()
-model.fit(X_vectorized, y)
+    model = MultinomialNB()
+    model.fit(X_vectorized, y)
 
-# =====================================
+    return model, vectorizer
+
+model, vectorizer = load_model()
+
+# ===============================
 # Session State
-# =====================================
+# ===============================
 
 if "chats" not in st.session_state:
     st.session_state.chats = {}
@@ -107,13 +53,42 @@ if "current_chat" not in st.session_state:
     st.session_state.chats[chat_id] = []
     st.session_state.current_chat = chat_id
 
-# =====================================
+# ===============================
 # Sidebar
-# =====================================
+# ===============================
 
-st.sidebar.title(t["conversations"])
+st.sidebar.title("💬 Conversations")
 
-if st.sidebar.button(t["new_chat"]):
+language = st.sidebar.selectbox("🌍 Language", ["English", "العربية"])
+
+# Proper RTL Fix (Mobile Safe)
+if language == "العربية":
+    st.markdown("""
+        <style>
+        .main {
+            direction: rtl;
+        }
+        .block-container {
+            direction: rtl;
+            text-align: right;
+        }
+        textarea, input {
+            direction: rtl !important;
+            text-align: right !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    title_text = "🤖 نموذج كشف الرسائل المزعجة"
+    input_placeholder = "اكتب رسالتك..."
+else:
+    title_text = "🤖 Spam Detection Model"
+    input_placeholder = "Type your message..."
+
+st.markdown(f"<h1 style='text-align:center;'>{title_text}</h1>", unsafe_allow_html=True)
+st.markdown("---")
+
+# New Chat
+if st.sidebar.button("➕ New Chat" if language == "English" else "➕ محادثة جديدة"):
     chat_id = str(uuid.uuid4())
     st.session_state.chats[chat_id] = []
     st.session_state.current_chat = chat_id
@@ -121,15 +96,19 @@ if st.sidebar.button(t["new_chat"]):
 
 st.sidebar.markdown("---")
 
+# Chat List
 for chat_id in st.session_state.chats:
-    chat_index = list(st.session_state.chats.keys()).index(chat_id) + 1
-    if st.sidebar.button(f"{t['chat']} {chat_index}", key=chat_id):
+    label = f"🗂 Chat {list(st.session_state.chats.keys()).index(chat_id)+1}"
+    if language == "العربية":
+        label = f"🗂 محادثة {list(st.session_state.chats.keys()).index(chat_id)+1}"
+
+    if st.sidebar.button(label, key=chat_id):
         st.session_state.current_chat = chat_id
         st.rerun()
 
-# =====================================
+# ===============================
 # Display Messages
-# =====================================
+# ===============================
 
 messages = st.session_state.chats[st.session_state.current_chat]
 
@@ -137,26 +116,26 @@ for msg in messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
 
-# =====================================
+# ===============================
 # Text Cleaning
-# =====================================
+# ===============================
 
 def clean_text(text):
     text = text.lower()
     text = re.sub(r'[^a-zA-Z\s]', '', text)
     return text
 
-# =====================================
+# ===============================
 # Chat Input
-# =====================================
+# ===============================
 
-user_input = st.chat_input(t["placeholder"])
+user_input = st.chat_input(input_placeholder)
 
 if user_input:
 
     messages.append({"role": "user", "content": user_input})
 
-    # Translate Arabic input to English for model
+    # Translate Arabic to English for model
     if language == "العربية":
         translated_input = GoogleTranslator(source='auto', target='en').translate(user_input)
     else:
@@ -171,21 +150,37 @@ if user_input:
     spam_prob = probabilities[1] * 100
     ham_prob = probabilities[0] * 100
 
+    # Generate Response
     if prediction == 1:
-        response = f"""
-{t['spam_title']}
+        if language == "العربية":
+            response = f"""
+🚨 **تم اكتشاف رسالة مزعجة**
 
-{t['prob_spam']}: {spam_prob:.2f}%
-{t['prob_ham']}: {ham_prob:.2f}%
+احتمال السبام: {spam_prob:.2f}%
+احتمال الرسالة الآمنة: {ham_prob:.2f}%
+"""
+        else:
+            response = f"""
+🚨 **SPAM DETECTED**
+
+Spam Probability: {spam_prob:.2f}%
+Ham Probability: {ham_prob:.2f}%
 """
     else:
-        response = f"""
-{t['ham_title']}
+        if language == "العربية":
+            response = f"""
+✅ **رسالة آمنة**
 
-{t['prob_ham']}: {ham_prob:.2f}%
-{t['prob_spam']}: {spam_prob:.2f}%
+احتمال الرسالة الآمنة: {ham_prob:.2f}%
+احتمال السبام: {spam_prob:.2f}%
+"""
+        else:
+            response = f"""
+✅ **SAFE MESSAGE**
+
+Ham Probability: {ham_prob:.2f}%
+Spam Probability: {spam_prob:.2f}%
 """
 
     messages.append({"role": "assistant", "content": response})
-
     st.rerun()
